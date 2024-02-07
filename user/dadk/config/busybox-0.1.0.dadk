@@ -1,0 +1,24 @@
+{
+  "name": "busybox",
+  "version": "1.36",
+  "description": "busybox built with musl",
+  "rust_target": null,
+  "task_type": {
+    "InstallFromPrebuilt": {
+      "Local": {
+        "path": "apps/busybox"
+      }
+    }
+  },
+  "depends": [],
+  "build": {
+    
+  },
+  "install": {
+    "in_dragonos_path": "/"
+  },
+  "clean": {
+    "clean_command": null
+  },
+  "envs": []
+}
