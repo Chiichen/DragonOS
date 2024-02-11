@@ -8,6 +8,7 @@ use crate::{
         CurrentIrqArch,
     },
     exception::InterruptArch,
+    kwarn,
     mm::ucontext::AddressSpace,
     process::{
         exec::{load_binary_file, ExecParam, ExecParamFlags},
@@ -176,8 +177,16 @@ impl Syscall {
     }
 
     #[allow(dead_code)]
-    pub fn do_arch_prctl_common(_option: usize, _arg2: usize) -> Result<usize, SystemError> {
-        todo!("do_arch_prctl_common not unimplemented");
+    pub fn do_arch_prctl_common(option: usize, _arg2: usize) -> Result<usize, SystemError> {
+        match option {
+            _ => {
+                kwarn!(
+                    "do_arch_prctl_common with option {:?} not unimplemented",
+                    option
+                );
+                return Err(SystemError::EINVAL);
+            }
+        }
     }
 }
 

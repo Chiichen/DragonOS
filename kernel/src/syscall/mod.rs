@@ -971,6 +971,38 @@ impl Syscall {
 
             SYS_SCHED_YIELD => Self::sched_yield(),
 
+            SYS_UNAME => {
+                let buf_vaddr = args[1];
+
+                let sysname = "DragonOS";
+                let nodename = "DragonOS";
+                let release = "release";
+                let version = "0.2.0";
+                #[cfg(target_arch = "x86_64")]
+                let machine = "x86_64";
+                #[cfg(target_arch = "riscv64")]
+                let machine = "riscv64";
+                let ptr_slice =
+                    unsafe { core::slice::from_raw_parts_mut(buf_vaddr as *mut *mut u8, 5) }; //5个char*指针
+                let mut offset = 0;
+                for (s, ptr) in [
+                    (sysname, ptr_slice[0]),
+                    (nodename, ptr_slice[1]),
+                    (release, ptr_slice[2]),
+                    (version, ptr_slice[3]),
+                    (machine, ptr_slice[4]),
+                ] {
+                    let mut user_buffer_writer = UserBufferWriter::new(ptr, s.len(), true)?;
+                    user_buffer_writer.copy_to_user(s.as_bytes(), offset)?;
+                    offset = offset + s.len();
+                }
+                return Ok(0);
+            }
+
+            SYS_SET_ROBUST_LIST => {
+                return Ok(0);
+            }
+
             _ => panic!("Unsupported syscall ID: {}", syscall_num),
         };
 
