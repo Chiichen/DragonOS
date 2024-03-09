@@ -7,11 +7,14 @@ use crate::{
     arch::{ipc::signal::SigSet, syscall::nr::*},
     driver::base::device::device_number::DeviceNumber,
     libs::{futex::constant::FutexFlag, rand::GRandFlags},
+    mm::syscall::MremapFlags,
     net::syscall::MsgHdr,
     process::{
         fork::KernelCloneArgs,
         resource::{RLimit64, RUsage},
+        ProcessManager,
     },
+    syscall::user_access::check_and_clone_cstr,
 };
 
 use num_traits::FromPrimitive;
@@ -55,10 +58,6 @@ pub const SYS_SCHED: usize = 100003;
 
 #[derive(Debug)]
 pub struct Syscall;
-
-extern "C" {
-    fn do_put_string(s: *const u8, front_color: u32, back_color: u32) -> usize;
-}
 
 impl Syscall {
     /// 初始化系统调用
@@ -129,9 +128,7 @@ impl Syscall {
             }
             SYS_CLOSE => {
                 let fd = args[0];
-                let res = Self::close(fd);
-
-                res
+                Self::close(fd)
             }
             SYS_READ => {
                 let fd = args[0] as i32;
@@ -142,8 +139,7 @@ impl Syscall {
                     UserBufferWriter::new(buf_vaddr as *mut u8, len, from_user)?;
 
                 let user_buf = user_buffer_writer.buffer(0)?;
-                let res = Self::read(fd, user_buf);
-                res
+                Self::read(fd, user_buf)
             }
             SYS_WRITE => {
                 let fd = args[0] as i32;
@@ -154,8 +150,7 @@ impl Syscall {
                     UserBufferReader::new(buf_vaddr as *const u8, len, from_user)?;
 
                 let user_buf = user_buffer_reader.read_from_user(0)?;
-                let res = Self::write(fd, user_buf);
-                res
+                Self::write(fd, user_buf)
             }
 
             SYS_LSEEK => {
@@ -173,6 +168,32 @@ impl Syscall {
 
                 Self::lseek(fd, w)
             }
+
+            SYS_PREAD64 => {
+                let fd = args[0] as i32;
+                let buf_vaddr = args[1];
+                let len = args[2];
+                let offset = args[3];
+
+                let mut user_buffer_writer =
+                    UserBufferWriter::new(buf_vaddr as *mut u8, len, frame.from_user())?;
+                let buf = user_buffer_writer.buffer(0)?;
+                Self::pread(fd, buf, len, offset)
+            }
+
+            SYS_PWRITE64 => {
+                let fd = args[0] as i32;
+                let buf_vaddr = args[1];
+                let len = args[2];
+                let offset = args[3];
+
+                let user_buffer_reader =
+                    UserBufferReader::new(buf_vaddr as *const u8, len, frame.from_user())?;
+
+                let buf = user_buffer_reader.read_from_user(0)?;
+                Self::pwrite(fd, buf, len, offset)
+            }
+
             SYS_IOCTL => {
                 let fd = args[0];
                 let cmd = args[1];
@@ -385,6 +406,12 @@ impl Syscall {
             }
 
             #[cfg(target_arch = "x86_64")]
+            SYS_RMDIR => {
+                let pathname = args[0] as *const u8;
+                Self::rmdir(pathname)
+            }
+
+            #[cfg(target_arch = "x86_64")]
             SYS_UNLINK => {
                 let pathname = args[0] as *const u8;
                 Self::unlink(pathname)
@@ -589,6 +616,15 @@ impl Syscall {
                         args[5],
                     )
                 }
+            }
+            SYS_MREMAP => {
+                let old_vaddr = VirtAddr::new(args[0]);
+                let old_len = args[1];
+                let new_len = args[2];
+                let mremap_flags = MremapFlags::from_bits_truncate(args[3] as u8);
+                let new_vaddr = VirtAddr::new(args[4]);
+
+                Self::mremap(old_vaddr, old_len, new_len, mremap_flags, new_vaddr)
             }
             SYS_MUNMAP => {
                 let addr = args[0];
@@ -821,6 +857,11 @@ impl Syscall {
                 Ok(0)
             }
 
+            SYS_SETPGID => {
+                kwarn!("SYS_SETPGID has not yet been implemented");
+                Ok(0)
+            }
+
             SYS_RT_SIGPROCMASK => {
                 kwarn!("SYS_RT_SIGPROCMASK has not yet been implemented");
                 Ok(0)
@@ -943,6 +984,16 @@ impl Syscall {
                 Self::umask(mask)
             }
 
+            SYS_FCHOWN => {
+                kwarn!("SYS_FCHOWN has not yet been implemented");
+                Ok(0)
+            }
+
+            SYS_FSYNC => {
+                kwarn!("SYS_FSYNC has not yet been implemented");
+                Ok(0)
+            }
+
             #[cfg(target_arch = "x86_64")]
             SYS_CHMOD => {
                 let pathname = args[0] as *const u8;
@@ -965,6 +1016,19 @@ impl Syscall {
                 // todo: 这个系统调用还没有实现
 
                 Err(SystemError::ENOSYS)
+            }
+
+            #[cfg(target_arch = "x86_64")]
+            SYS_GETRLIMIT => {
+                let resource = args[0];
+                let rlimit = args[1] as *mut RLimit64;
+
+                Self::prlimit64(
+                    ProcessManager::current_pcb().pid(),
+                    resource,
+                    0 as *const RLimit64,
+                    rlimit,
+                )
             }
 
             SYS_SCHED_YIELD => Self::sched_yield(),
@@ -1012,7 +1076,16 @@ impl Syscall {
         front_color: u32,
         back_color: u32,
     ) -> Result<usize, SystemError> {
-        return Ok(unsafe { do_put_string(s, front_color, back_color) });
+        // todo: 删除这个系统调用
+        let s = check_and_clone_cstr(s, Some(4096))?;
+        let fr = (front_color & 0x00ff0000) >> 16;
+        let fg = (front_color & 0x0000ff00) >> 8;
+        let fb = front_color & 0x000000ff;
+        let br = (back_color & 0x00ff0000) >> 16;
+        let bg = (back_color & 0x0000ff00) >> 8;
+        let bb = back_color & 0x000000ff;
+        print!("\x1B[38;2;{fr};{fg};{fb};48;2;{br};{bg};{bb}m{s}\x1B[0m");
+        return Ok(s.len());
     }
 
     pub fn reboot() -> Result<usize, SystemError> {

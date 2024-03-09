@@ -5,12 +5,13 @@ use crate::{bitmap_core::BitMapCore, traits::BitMapOps};
 /// 静态位图
 ///
 /// 该位图的大小在编译时确定，不可变
+#[derive(Debug, Clone)]
 pub struct StaticBitmap<const N: usize>
 where
     [(); (N + usize::BITS as usize - 1) / (usize::BITS as usize)]:,
 {
     pub data: [usize; (N + usize::BITS as usize - 1) / (usize::BITS as usize)],
-    core: BitMapCore<usize, N>,
+    core: BitMapCore<usize>,
 }
 
 impl<const N: usize> StaticBitmap<N>
@@ -32,12 +33,12 @@ where
 {
     #[inline]
     fn get(&self, index: usize) -> Option<bool> {
-        return self.core.get(&self.data, index);
+        return self.core.get(N, &self.data, index);
     }
 
     #[inline]
     fn set(&mut self, index: usize, value: bool) -> Option<bool> {
-        return self.core.set(&mut self.data, index, value);
+        return self.core.set(N, &mut self.data, index, value);
     }
 
     #[inline]
@@ -57,47 +58,47 @@ where
 
     #[inline]
     fn first_false_index(&self) -> Option<usize> {
-        self.core.first_false_index(&self.data)
+        self.core.first_false_index(N, &self.data)
     }
 
     #[inline]
     fn last_index(&self) -> Option<usize> {
-        self.core.last_index(&self.data)
+        self.core.last_index(N, &self.data)
     }
 
     #[inline]
     fn last_false_index(&self) -> Option<usize> {
-        self.core.last_false_index(&self.data)
+        self.core.last_false_index(N, &self.data)
     }
 
     #[inline]
     fn next_index(&self, index: usize) -> Option<usize> {
-        self.core.next_index(&self.data, index)
+        self.core.next_index(N, &self.data, index)
     }
 
     #[inline]
     fn next_false_index(&self, index: usize) -> Option<usize> {
-        self.core.next_false_index(&self.data, index)
+        self.core.next_false_index(N, &self.data, index)
     }
 
     #[inline]
     fn prev_index(&self, index: usize) -> Option<usize> {
-        self.core.prev_index(&self.data, index)
+        self.core.prev_index(N, &self.data, index)
     }
 
     #[inline]
     fn prev_false_index(&self, index: usize) -> Option<usize> {
-        self.core.prev_false_index(&self.data, index)
+        self.core.prev_false_index(N, &self.data, index)
     }
 
     #[inline]
     fn invert(&mut self) {
-        self.core.invert(&mut self.data);
+        self.core.invert(N, &mut self.data);
     }
 
     #[inline]
     fn is_full(&self) -> bool {
-        self.core.is_full(&self.data)
+        self.core.is_full(N, &self.data)
     }
 
     #[inline]
@@ -114,6 +115,6 @@ where
     }
 
     fn set_all(&mut self, value: bool) {
-        self.core.set_all(&mut self.data, value);
+        self.core.set_all(N, &mut self.data, value);
     }
 }

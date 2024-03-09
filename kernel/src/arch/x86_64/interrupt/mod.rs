@@ -1,6 +1,8 @@
 mod c_adapter;
 pub(super) mod entry;
+mod handle;
 pub mod ipi;
+pub mod msi;
 pub mod trap;
 
 use core::{
@@ -12,14 +14,13 @@ use system_error::SystemError;
 
 use crate::{
     arch::CurrentIrqArch,
-    exception::{InterruptArch, IrqFlags, IrqFlagsGuard},
+    exception::{InterruptArch, IrqFlags, IrqFlagsGuard, IrqNumber},
+    kerror,
 };
-
-use self::entry::setup_interrupt_gate;
 
 use super::{
     asm::irqflags::{local_irq_restore, local_irq_save},
-    driver::apic::{CurrentApic, LocalAPIC},
+    driver::apic::{lapic_vector::arch_early_irq_init, CurrentApic, LocalAPIC},
 };
 
 /// @brief 关闭中断
@@ -44,8 +45,7 @@ impl InterruptArch for X86_64InterruptArch {
     #[inline(never)]
     unsafe fn arch_irq_init() -> Result<(), SystemError> {
         CurrentIrqArch::interrupt_disable();
-        setup_interrupt_gate();
-        CurrentApic.init_current_cpu();
+
         return Ok(());
     }
     unsafe fn interrupt_enable() {
@@ -77,6 +77,21 @@ impl InterruptArch for X86_64InterruptArch {
         compiler_fence(Ordering::SeqCst);
         local_irq_restore(flags.flags());
         compiler_fence(Ordering::SeqCst);
+    }
+
+    fn probe_total_irq_num() -> u32 {
+        // todo: 从APIC获取
+        // 参考 https://code.dragonos.org.cn/xref/linux-6.1.9/arch/x86/kernel/apic/vector.c?r=&mo=19514&fi=704#704
+        256
+    }
+
+    fn ack_bad_irq(irq: IrqNumber) {
+        kerror!("Unexpected IRQ trap at vector {}", irq.data());
+        CurrentApic.send_eoi();
+    }
+
+    fn arch_early_irq_init() -> Result<(), SystemError> {
+        arch_early_irq_init()
     }
 }
 

@@ -1,5 +1,6 @@
 pub mod align;
 pub mod casting;
+pub mod cpumask;
 pub mod elf;
 pub mod ffi_convert;
 #[macro_use]
@@ -24,3 +25,5 @@ pub mod volatile;
 pub mod futex;
 pub mod rand;
 pub mod wait_queue;
+
+pub mod font;

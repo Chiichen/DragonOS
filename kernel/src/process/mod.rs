@@ -1,9 +1,9 @@
 use core::{
-    hash::{Hash, Hasher},
+    hash::Hash,
     hint::spin_loop,
     intrinsics::{likely, unlikely},
     mem::ManuallyDrop,
-    sync::atomic::{compiler_fence, AtomicBool, AtomicI32, AtomicIsize, AtomicUsize, Ordering},
+    sync::atomic::{compiler_fence, AtomicBool, AtomicIsize, AtomicUsize, Ordering},
 };
 
 use alloc::{
@@ -21,6 +21,7 @@ use crate::{
         sched::sched,
         CurrentIrqArch,
     },
+    driver::tty::tty_core::TtyCore,
     exception::InterruptArch,
     filesystem::{
         procfs::procfs_unregister_pid,
@@ -47,7 +48,10 @@ use crate::{
         core::{sched_enqueue, CPU_EXECUTING},
         SchedPolicy, SchedPriority,
     },
-    smp::kick_cpu,
+    smp::{
+        cpu::{AtomicProcessorId, ProcessorId},
+        kick_cpu,
+    },
     syscall::{user_access::clear_user, Syscall},
 };
 
@@ -444,12 +448,6 @@ pub unsafe extern "C" fn switch_finish_hook() {
 }
 
 int_like!(Pid, AtomicPid, usize, AtomicUsize);
-
-impl Hash for Pid {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-    }
-}
 
 impl Pid {
     pub fn to_string(&self) -> String {
@@ -1018,10 +1016,10 @@ impl ProcessBasicInfo {
 #[derive(Debug)]
 pub struct ProcessSchedulerInfo {
     /// 当前进程所在的cpu
-    on_cpu: AtomicI32,
+    on_cpu: AtomicProcessorId,
     /// 如果当前进程等待被迁移到另一个cpu核心上（也就是flags中的PF_NEED_MIGRATE被置位），
     /// 该字段存储要被迁移到的目标处理器核心号
-    migrate_to: AtomicI32,
+    migrate_to: AtomicProcessorId,
     inner_locked: RwLock<InnerSchedInfo>,
     /// 进程的调度优先级
     priority: SchedPriority,
@@ -1055,14 +1053,11 @@ impl InnerSchedInfo {
 
 impl ProcessSchedulerInfo {
     #[inline(never)]
-    pub fn new(on_cpu: Option<u32>) -> Self {
-        let cpu_id = match on_cpu {
-            Some(cpu_id) => cpu_id as i32,
-            None => -1,
-        };
+    pub fn new(on_cpu: Option<ProcessorId>) -> Self {
+        let cpu_id = on_cpu.unwrap_or(ProcessorId::INVALID);
         return Self {
-            on_cpu: AtomicI32::new(cpu_id),
-            migrate_to: AtomicI32::new(-1),
+            on_cpu: AtomicProcessorId::new(cpu_id),
+            migrate_to: AtomicProcessorId::new(ProcessorId::INVALID),
             inner_locked: RwLock::new(InnerSchedInfo {
                 state: ProcessState::Blocked(false),
                 sched_policy: SchedPolicy::CFS,
@@ -1073,37 +1068,38 @@ impl ProcessSchedulerInfo {
         };
     }
 
-    pub fn on_cpu(&self) -> Option<u32> {
+    pub fn on_cpu(&self) -> Option<ProcessorId> {
         let on_cpu = self.on_cpu.load(Ordering::SeqCst);
-        if on_cpu == -1 {
+        if on_cpu == ProcessorId::INVALID {
             return None;
         } else {
-            return Some(on_cpu as u32);
+            return Some(on_cpu);
         }
     }
 
-    pub fn set_on_cpu(&self, on_cpu: Option<u32>) {
+    pub fn set_on_cpu(&self, on_cpu: Option<ProcessorId>) {
         if let Some(cpu_id) = on_cpu {
-            self.on_cpu.store(cpu_id as i32, Ordering::SeqCst);
+            self.on_cpu.store(cpu_id, Ordering::SeqCst);
         } else {
-            self.on_cpu.store(-1, Ordering::SeqCst);
+            self.on_cpu.store(ProcessorId::INVALID, Ordering::SeqCst);
         }
     }
 
-    pub fn migrate_to(&self) -> Option<u32> {
+    pub fn migrate_to(&self) -> Option<ProcessorId> {
         let migrate_to = self.migrate_to.load(Ordering::SeqCst);
-        if migrate_to == -1 {
+        if migrate_to == ProcessorId::INVALID {
             return None;
         } else {
-            return Some(migrate_to as u32);
+            return Some(migrate_to);
         }
     }
 
-    pub fn set_migrate_to(&self, migrate_to: Option<u32>) {
+    pub fn set_migrate_to(&self, migrate_to: Option<ProcessorId>) {
         if let Some(data) = migrate_to {
-            self.migrate_to.store(data as i32, Ordering::SeqCst);
+            self.migrate_to.store(data, Ordering::SeqCst);
         } else {
-            self.migrate_to.store(-1, Ordering::SeqCst)
+            self.migrate_to
+                .store(ProcessorId::INVALID, Ordering::SeqCst)
         }
     }
 
@@ -1302,6 +1298,8 @@ pub struct ProcessSignalInfo {
     sig_pending: SigPending,
     // sig_shared_pending 中存储当前线程所属进程要处理的信号
     sig_shared_pending: SigPending,
+    // 当前进程对应的tty
+    tty: Option<Arc<TtyCore>>,
 }
 
 impl ProcessSignalInfo {
@@ -1329,6 +1327,14 @@ impl ProcessSignalInfo {
         &self.sig_shared_pending
     }
 
+    pub fn tty(&self) -> Option<Arc<TtyCore>> {
+        self.tty.clone()
+    }
+
+    pub fn set_tty(&mut self, tty: Arc<TtyCore>) {
+        self.tty = Some(tty);
+    }
+
     /// 从 pcb 的 siginfo中取出下一个要处理的信号，先处理线程信号，再处理进程信号
     ///
     /// ## 参数
@@ -1351,6 +1357,7 @@ impl Default for ProcessSignalInfo {
             sig_block: SigSet::empty(),
             sig_pending: SigPending::default(),
             sig_shared_pending: SigPending::default(),
+            tty: None,
         }
     }
 }
