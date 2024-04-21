@@ -96,7 +96,7 @@ jobs:
         run: |
           mv -vf assets/changelog/* ./docs/community/ChangeLog/${{needs.meta.outputs.tag}}.md
       - name: Git sync
-        run: |
-          git add ./docs/community/ChangeLog/${{needs.meta.outputs.tag}}.md
-          git commit -m "docs(release): update CHANGELOG for ${{needs.meta.outputs.tag}}"
-          git push
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs(release): Update ChangeLog of ${{needs.meta.outputs.tag}}"
+          file_pattern: 'docs/community/ChangeLog/*.md'

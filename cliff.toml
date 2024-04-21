@@ -44,6 +44,7 @@ split_commits = false
 commit_parsers = [
     { message = "^feat", group = "新功能|Features" },
     { message = "^fix", group = "Bug修复|Bug Fixes" },
+    { message = "^docs?\\(release\\)", skip = true },
     { message = "^docs?", group = "文档|Documentation", default_scope = "未分类|unscoped" },
     { message = "^perf", group = "性能优化|Performance" },
     { message = "^refactor", group = "重构|Refactor" },
