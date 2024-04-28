@@ -87,6 +87,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.action_ref }}
           submodules: recursive
       - name: Download assets from Github
         uses: actions/download-artifact@v4
