@@ -1013,15 +1013,22 @@ impl BinaryLoader for ElfLoader {
             phdr_vaddr,
             &ehdr,
         )?;
-
+        // kdebug!(
+        //     "start code {:?}, end_code {:?}, start data {:?}, end data {:?}, interp_addr {:?}",
+        //     start_code,
+        //     end_code,
+        //     start_data,
+        //     end_data,
+        //     interp_load_addr,
+        // );
         // kdebug!("auxv create ok");
         user_vm.start_code = start_code.unwrap_or(VirtAddr::new(0));
         user_vm.end_code = end_code.unwrap_or(VirtAddr::new(0));
         user_vm.start_data = start_data.unwrap_or(VirtAddr::new(0));
         user_vm.end_data = end_data.unwrap_or(VirtAddr::new(0));
 
-        let result = BinaryLoaderResult::new(program_entrypoint);
-        // kdebug!("elf load OK!!!");
+        let result = BinaryLoaderResult::new(interp_load_addr.unwrap_or(program_entrypoint));
+        kdebug!("elf load OK!!!");
         return Ok(result);
     }
 }
