@@ -4,15 +4,15 @@
   "description": "glibc libc",
   "rust_target": null,
   "task_type": {
-    "BuildFromSource": {
+    "InstallFromPrebuilt": {
       "Archive": {
-        "url": "https://github.com/DragonOS-Community/glibc-mirror/archive/refs/tags/v2.39.9-beta.3.tar.gz"
+        "url": "https://github.com/DragonOS-Community/glibc-cross/releases/download/v0.2.0/x86_64-linux-gnu.tar.gz"
       }
     }
   },
   "depends": [],
   "build": {
-    "build_command": "bash dragonos.sh"
+    "build_command": ""
   },
   "install": {
     "in_dragonos_path": "/"
